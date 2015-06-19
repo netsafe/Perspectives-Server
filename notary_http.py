@@ -31,6 +31,7 @@ from util.keymanager import keymanager
 from notary_util.notary_db import ndb
 from notary_util import notary_common
 from util.ssl_scan_sock import attempt_observation_for_service, SSLScanTimeoutException, SSLAlertException
+from util.ssl_scan_openssl import openssl_attempt_observation_for_service
 
 class NotaryHTTPServer:
 	"""
@@ -445,6 +446,17 @@ class OnDemandScanThread(threading.Thread):
 		"""Clean up after scanning."""
 		del self.db
 
+	def do_openssl(self):
+		try:
+			fp = openssl_attempt_observation_for_service(self.sid, self.timeout_sec, self.use_sni)
+			if (fp != None):
+				self.db.report_observation(self.sid, fp)
+			# else error already logged
+			# TODO: add internal blacklisting to remove sites that don't exist or stop working.
+		except Exception as e:
+			self.db.report_metric('OpenSSL OnDemandServiceScanFailure', self.sid + " " + str(e))
+			traceback.print_exc(file=sys.stdout)
+
 	def run(self): 
 
 		try:
@@ -455,7 +467,8 @@ class OnDemandScanThread(threading.Thread):
 			# TODO: add internal blacklisting to remove sites that don't exist or stop working.
 		except (ValueError, SSLScanTimeoutException, SSLAlertException) as e:
 			self.db.report_metric('OnDemandServiceScanFailure', self.sid + " " + str(e))
-			print >> sys.stderr, "Error scanning '{0}' - {1}".format(self.sid, e)
+			print >> sys.stderr, "Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e)
+			self.do_openssl();
 		except Exception as e:
 			self.db.report_metric('OnDemandServiceScanFailure', self.sid + " " + str(e))
 			traceback.print_exc(file=sys.stdout)

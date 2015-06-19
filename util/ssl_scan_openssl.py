@@ -29,16 +29,18 @@ import traceback
 # as it was only compiled into openssl by default since 0.9.8j .
 # If you have a version of openssl with SNI support, change the value of
 # this variable, as your notary probing will be more accurate.
-USE_SNI = False
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+# Obsolete! no sane person uses that outdated OpenSSL nowdays, see : http://openssl.org/news/  <Alexey Vesnin>
 
+#USE_SNI = False <--- Implemented into optional function argument, as in socket scanner
 
 # note: timeout is ignored for now
-def attempt_observation_for_service(service, timeout):
+def openssl_attempt_observation_for_service(service, timeout, use_sni=False):
 	dns_and_port = service.split(",")[0]
 	dns = dns_and_port.split(":")[0]
 
 	cmd1_args = ["openssl","s_client","-connect", dns_and_port ]
-	if (USE_SNI):
+	if (use_sni):
 		cmd1_args += [ "-servername", dns ]
 	p1 = Popen(cmd1_args, stdin=file(os.devnull, "r"), stdout=PIPE, stderr=None)
 	p2 = Popen(["openssl","x509","-fingerprint","-md5", "-noout"],
@@ -48,11 +50,11 @@ def attempt_observation_for_service(service, timeout):
 	p2.wait()
 
 	if p2.returncode != 0:
-		raise Exception("ERROR: Could not fetch/decode certificate for '%s'" % dns_and_port)
+		raise Exception("OpenSSL Scan ERROR: Could not fetch/decode certificate for '%s'" % dns_and_port)
 
 	fp_regex = re.compile("^MD5 Fingerprint=[A-F0-9]{2}(:([A-F0-9]){2}){15}$")
 	if not fp_regex.match(output):
-		raise Exception("ERROR: invalid fingerprint '%s'" % output)
+		raise Exception("OpenSSL Scan ERROR: invalid fingerprint '%s'" % output)
 
 	return output.split("=")[1].lower()
 
@@ -70,6 +72,6 @@ if __name__ == "__main__":
 		fp = attempt_observation_for_service(service, 10)
 		print "Successful scan complete: '%s' has key '%s' " % (service,fp)
 	except:
-		print "Error scanning for %s" % service
+		print "OpenSSL Scan Error scanning for %s" % service
 		traceback.print_exc(file=sys.stdout)
 
