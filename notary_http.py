@@ -48,6 +48,7 @@ class NotaryHTTPServer:
 	VERSION = "3.4.1"
 
 	DEFAULT_WEB_PORT=8080
+	DEFAULT_WEB_ADDR='0.0.0.0'
 	ENV_PORT_KEY_NAME='PORT'
 	STATIC_DIR = "notary_static"
 	STATIC_INDEX = "index.html"
@@ -71,7 +72,7 @@ class NotaryHTTPServer:
 		parser.add_argument('--sni', action='store_true', default=False,
 			help="Use Server Name Indication when scanning sites. See section 3.1 of http://www.ietf.org/rfc/rfc4366.txt.\
 			 Default: \'%(default)s\'")
-
+		parser.add_argument('--bind-address', '-i', default=self.DEFAULT_WEB_ADDR, help="Address to use for the webserver. Default: \'%(default)s\'.")
 		cachegroup = parser.add_mutually_exclusive_group()
 		cachegroup.add_argument('--memcache', '--memcached', action='store_true', default=False,
 			help="Use memcache to cache observation data, to increase performance and reduce load on the notary database.\
@@ -133,6 +134,10 @@ class NotaryHTTPServer:
 					(self.ENV_PORT_KEY_NAME))
 		elif (args.webport):
 			self.web_port = args.webport
+
+		self.web_addr = self.DEFAULT_WEB_ADDR;
+		if (args.bind_address):
+			self.web_addr=args.bind_address;
 
 		self.cache = None
 		if (args.memcache):
@@ -501,7 +506,7 @@ def fake_access(): return
 cherrypy.log.access = fake_access
 
 cherrypy.config.update({ 'server.socket_port' : notary.web_port,
-			 'server.socket_host' : "0.0.0.0",
+			 'server.socket_host' : notary.web_addr,
 			 'server.socket_queue_size': notary.args.socket_queue_size,
 			 'server.thread_pool': notary.args.thread_pool_size,
 			 'request.show_tracebacks' : False,  
