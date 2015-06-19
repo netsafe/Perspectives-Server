@@ -36,7 +36,7 @@ from notary_db import ndb
 sys.path.insert(0,
 	os.path.dirname(os.path.dirname(os.path.realpath(__file__))))
 from util.ssl_scan_sock import attempt_observation_for_service, SSLScanTimeoutException, SSLAlertException
-
+from util.ssl_scan_openssl import openssl_attempt_observation_for_service
 
 DEFAULT_SCANS = 10
 DEFAULT_WAIT = 20
@@ -91,18 +91,33 @@ class ScanThread(threading.Thread):
 			logging.error("Unknown error scanning '%s'\n" % self.sid)
 			traceback.print_exc(file=sys.stdout)
 
+	def do_openssl(self):
+		try:
+			fp = openssl_attempt_observation_for_service(self.sid, self.timeout_sec, self.sni)
+			if (fp != None):
+				res_list.append((self.sid,fp))
+			else:
+				# error already logged, but tally error count <--- final error
+				stats.failures += 1
+				stats.failure_socket += 1
+		except Exception as e:
+			traceback.print_exc(file=sys.stdout)
+			self.record_failure(e)
+
+
 	def run(self): 
 		try: 
 			fp = attempt_observation_for_service(self.sid, self.timeout_sec, self.sni)
 			if (fp != None):
 				res_list.append((self.sid,fp))
-			else:
+			#else: <---- Let's gie OpenSSL a try
 				# error already logged, but tally error count
-				stats.failures += 1
-				stats.failure_socket += 1
+				#stats.failures += 1
+				#stats.failure_socket += 1
 		except Exception, e:
-			self.record_failure(e) 
-			logging.error("Error scanning '{0}' - {1}".format(self.sid, e))
+			# self.record_failure(e)
+			logging.error("Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e))
+			self.do_openssl();
 
 		self.global_stats.num_completed += 1
 		self.global_stats.active_threads -= 1
