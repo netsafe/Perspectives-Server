@@ -49,6 +49,9 @@ class NotaryHTTPServer:
 
 	DEFAULT_WEB_PORT=8080
 	DEFAULT_WEB_ADDR='0.0.0.0'
+	DEFAULT_REDIS_ADDR='redis://127.0.0.1'
+	DEFAULT_MEMCACHED_ADDR='tcp:127.0.0.1'
+	MEMCACHED_ANON_AUTH_MODE=False
 	ENV_PORT_KEY_NAME='PORT'
 	STATIC_DIR = "notary_static"
 	STATIC_INDEX = "index.html"
@@ -97,6 +100,13 @@ class NotaryHTTPServer:
 			"The default client settings ignore notary results that have not been updated in the past 48 hours, " +\
 			"so you may want your (scan frequency + scan duration + cache expiry) to be <= 48 hours. Default: " +\
 			str(self.CACHE_EXPIRY / 3600) + " hours.")
+		memcachedgroup = parser.add_mutually_exclusive_group()
+		memcachedgroup.add_argument('--memcache-host','-mh', default=self.DEFAULT_MEMCACHED_ADDR, help="Address to use for the memcached connection. Default: \'%(default)s\' or use environment vars if not specified explicitly.")
+		memcachedgroup.add_argument('--envmemcache', action='store_true', default=False, help="Get all the memcached details out of environment variables(default behaviour)")
+		parser.add_argument('--memcache-user','-mu', help="Memcached username. Default: use environment vars if no host specified.")
+		parser.add_argument('--memcache-password', '-mp', help="Memcached password. Default: use environment vars if no host specified.")
+		parser.add_argument('--memcache-anonymous-mode', default=self.MEMCACHED_ANON_AUTH_MODE, help="Set this flag if memcached does not require an authentication.  Default: \'%(default)s\'")
+		parser.add_argument('--redis-url', '-ru', default=self.DEFAULT_REDIS_ADDR, help="Address to use for the webserver. Default: \'%(default)s\'.")
 
 		# socket_queue_size and thread_pool use the cherrypy defaults,
 		# but we hardcode them here rather than refer to the cherrypy variables directly
@@ -141,11 +151,41 @@ class NotaryHTTPServer:
 
 		self.cache = None
 		if (args.memcache):
+		    if(args.envmemcache):
+			print "Creating memcache via pylibmc from environment"
 			self.cache = cache.Memcache()
+		    else:
+			print "Creating memcache via pylibmc with host specified %s" % args.memcache_host
+			if(args.memcache_anonymous_mode):
+			    print "Anonymous mode selected for memcached"
+			    self.cache = cache.Memcache(args.memcache_host,'','',True)
+			else:
+			    print "User credentials must be supplied"
+			    if(args.memcache_user and args.memcache_password):
+				print "Using username %s for memcached" % args.memcache_user
+				self.cache = cache.Memcache(args.memcache_host,args.memcache_user,args.memcache_password)
+			    else:
+				print "Authentication is required for memcached, but no username and password pair was specified, will take them out of env vars"
+				self.cache = cache.Memcache(args.memcache_host)
 		elif (args.memcachier):
+		    if(args.envmemcache):
+			print "Creating memcache via Memcachier from environment"
 			self.cache = cache.Memcachier()
+		    else:
+			print "Creating memcache via Memcachier with host specified %s" % args.memcache_host
+			if(args.memcache_anonymous_mode):
+			    print "Anonymous mode selected for memcached"
+			    self.cache = cache.Memcachier(args.memcache_host,'','',True)
+			else:
+			    print "User credentials must be supplied"
+			    if(args.memcache_user and args.memcache_password):
+				print "Using username %s for memcached" % args.memcache_user
+				self.cache = cache.Memcachier(args.memcache_host,args.memcache_user,args.memcache_password)
+			    else:
+				print "Authentication is required for memcached, but no username and password pair was specified, will take them out of env vars"
+				self.cache = cache.Memcachier(args.memcache_host)
 		elif (args.redis):
-			self.cache = cache.Redis()
+			self.cache = cache.Redis(args.redis_url)
 		elif (args.pycache):
 			self.cache = cache.Pycache(args.pycache)
 

@@ -75,20 +75,50 @@ class Memcache(CacheBase):
 		return "Cache configuration is read from the environment variables " \
 				+ self.CACHE_SERVER_VAR  + ", " + self.CACHE_USER_VAR + ", and " + self.CACHE_PASS_VAR + "."
 
-	def __init__(self):
+	def __init__(self, servers_provided='_',username_provided='',password_provided='',anonymous_mode=False):
 		"""Connect to the memcache server(s)."""
 		self.pool = None
 		try:
 			import pylibmc
 			#TODO: ALL INPUT IS EVIL
 			#regex check these variables
-			mc = pylibmc.Client(
-				servers=[os.environ.get(self.CACHE_SERVER_VAR)],
-				username=os.environ.get(self.CACHE_USER_VAR),
-				password=os.environ.get(self.CACHE_PASS_VAR),
-				binary=True
-			)
+			if(servers_provided == '_'):
+			    if (self.CACHE_SERVER_VAR in os.environ):
+				# utilizing https://www.memcachier.com/documentation#python
+				myservers=os.environ.get(self.CACHE_SERVER_VAR).split(',')
+			    else:
+				raise ValueError("memcached environment option specified but no '%s' variable exists." % (self.CACHE_SERVER_VAR))
+			else:
+			    myservers=servers_provided.split(',')
+
+			if(anonymous_mode is False and (username_provided == '' or password_provided == '')):
+			    if ((self.CACHE_USER_VAR in os.environ) and (self.CACHE_PASS_VAR in os.environ) and (anonymous_mode is False)):
+				myusername=os.environ.get(self.CACHE_USER_VAR)
+				mypassword=os.environ.get(self.CACHE_PASS_VAR)
+			    else:
+				raise ValueError("memcached environment option specified but no login and pass variable pair '%s':'%s' exists." % (self.CACHE_USER_VAR), (self.CACHE_PASS_VAR))
+			else:
+			    myusername=username_provided
+			    mypassword=password_provided
+
+			# utilizing some http://sendapatch.se/projects/pylibmc/
+			if(anonymous_mode is True):
+			    mc = pylibmc.Client(
+				servers=myservers,
+				binary=True,
+				behaviors={"tcp_nodelay": True,"no_block": True,},
+			    )
+			else:
+			    mc = pylibmc.Client(
+				servers=myservers,
+				username=myusername,
+				password=mypassword,
+				binary=True,
+				behaviors={"tcp_nodelay": True,"no_block": True,},
+			    )
+
 			self.pool = pylibmc.ThreadMappedPool(mc)
+
 		except ImportError:
 			print >> sys.stderr, "ERROR: Could not import module 'pylibmc' - memcache is disabled. Please install the module and try again."
 			self.pool = None
@@ -148,9 +178,9 @@ class Memcachier(Memcache):
 		"""Tell the user how they can use this type of cache."""
 		return super(Memcachier, self).get_help()
 
-	def __init__(self):
+	def __init__(self, servers_provided='_',username_provided='',password_provided='',anonymous_mode=False):
 		"""Connect to the memcachier server(s)."""
-		return super(Memcachier, self).__init__()
+		return super(Memcachier, self).__init__(servers_provided,username_provided,password_provided,anonymous_mode)
 
 	def __del__(self):
 		"""Clean up resources"""
@@ -181,14 +211,18 @@ class Redis(CacheBase):
 		"""Tell the user how they can use this type of cache."""
 		return "Redis configuration is read from the environment variable '%s'." % (self.REDIS_URL)
 
-	def __init__(self):
+	def __init__(self, redis_url_provided='_'):
 		"""Connect to the redis server(s)."""
 		self.redis = None
 		try:
 			import redis
 			#TODO: ALL INPUT IS EVIL
 			#regex check these variables
-			redis_url = os.getenv(self.REDIS_URL, 'redis://localhost')
+			if(redis_url_provided == '_'):
+			    redis_url = os.getenv(self.REDIS_URL, 'redis://localhost')
+			else:
+			    redis_url = redis_provided_url
+
 			self.redis = redis.from_url(redis_url)
 		except ImportError:
 			print >> sys.stderr, "ERROR: Could not import module 'redis' - redis caching is disabled. Please install the module and try again."
