@@ -474,6 +474,7 @@ class NotaryHTTPServer:
 			raise cherrypy.HTTPError(400) # 400 Bad Request
 			
 		cherrypy.response.headers['Content-Type'] = 'text/xml'
+		cherrypy.response.headers['Cache-control'] = 'private, max-age=3600'
 		return self.get_xml(host, port, service_type)
 
 
