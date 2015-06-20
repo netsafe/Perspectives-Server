@@ -139,10 +139,11 @@ class Memcache(CacheBase):
 
 	def get(self, key):
 		"""Retrieve the value for a given key, or None if no key exists."""
+		prefixkey="perspectives-" + key
 		if (self.pool != None):
 			with self.pool.reserve() as mc:
 				try:
-					return mc.get(str(key))
+					return mc.get(str(prefixkey))
 				except Exception as e:
 					print >> sys.stderr, "cache get() error: '{0}'.".format(e)
 		else:
@@ -151,10 +152,11 @@ class Memcache(CacheBase):
 
 	def set(self, key, data, expiry=CacheBase.CACHE_EXPIRY):
 		"""Save the value to a given key name."""
+		prefixkey="perspectives-" + key
 		if (self.pool != None):
 			with self.pool.reserve() as mc:
 				try:
-					mc.set(str(key), data, time=expiry)
+					mc.set(str(prefixkey), data, time=expiry)
 				except Exception as e:
 					print >> sys.stderr, "cache set() error: '{0}'.".format(e)
 		else:
