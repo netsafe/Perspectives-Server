@@ -56,6 +56,11 @@ class CacheBase(object):
 		"""Save the value to a given key name."""
 		raise NotImplementedError( "This is just the abstract base class - please use a class that inherits from CacheBase." )
 
+	@abc.abstractmethod
+	def destroy(self, key):
+		"""Destroy the value to a given key name."""
+		raise NotImplementedError( "This is just the abstract base class - please use a class that inherits from CacheBase." )
+
 
 class Memcache(CacheBase):
 	"""
@@ -163,6 +168,18 @@ class Memcache(CacheBase):
 			print >> sys.stderr, "Cache does not exist! Create it first"
 
 
+	def destroy(self,key):
+		"""Destroy a value by key"""
+		prefixkey="perspectives-" + key
+		if (self.pool != None):
+			with self.pool.reserve() as mc:
+				try:
+					mc.delete(str(prefixkey))
+				except Exception as e:
+					print >> sys.stderr, "cache destroy() error: '{0}'.".format(e)
+		else:
+			print >> sys.stderr, "Cache does not exist! Create it first"
+
 class Memcachier(Memcache):
 	"""
 	Cache data using memcachier (www.memcachier.com).
@@ -195,6 +212,10 @@ class Memcachier(Memcache):
 	def set(self, key, data, expiry):
 		"""Save the value to a given key name."""
 		return super(Memcachier, self).set(key, data, expiry)
+
+	def destroy(self, key):
+		"""Destroy the value by the given key name."""
+		return super(Memcachier, self).destroy(key)
 
 
 class Redis(CacheBase):
@@ -253,6 +274,16 @@ class Redis(CacheBase):
 				self.redis.expire(key, expiry)
 			except Exception, e:
 				print >> sys.stderr, "redis set() error: '{0}'.".format(e)
+		else:
+			print >> sys.stderr, "ERROR: Redis cache does not exist! Create it first"
+    
+	def destroy(self, key):
+		"""Destroy the value by the given key name."""
+		if (self.redis != None):
+			try:
+				self.redis.delete(key)
+			except Exception, e:
+				print >> sys.stderr, "redis destroy() error: '{0}'.".format(e)
 		else:
 			print >> sys.stderr, "ERROR: Redis cache does not exist! Create it first"
 
@@ -341,3 +372,7 @@ class Pycache(CacheBase):
 				print >> sys.stderr, "pycache set() error: '{0}'.".format(e)
 		else:
 			print >> sys.stderr, "pycache set() error: cache does not exist! create it before setting values."
+
+	def destroy(self, key):
+		"""Stub"""
+		print >> sys.stderr, "pycache destroy() called, but it should not happen"
