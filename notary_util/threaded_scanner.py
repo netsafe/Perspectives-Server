@@ -58,7 +58,7 @@ MEMCACHED_ANON_AUTH_MODE=False
 
 class ScanThread(threading.Thread): 
 
-	def __init__(self, sid, global_stats,timeout_sec, sni, cache = None):
+	def __init__(self, sid, global_stats,timeout_sec, sni, cache = None, use_openssl_flag = False):
 		self.sid = sid
 		self.global_stats = global_stats
 		self.global_stats.active_threads += 1
@@ -67,6 +67,7 @@ class ScanThread(threading.Thread):
 		self.sni = sni
 		self.global_stats.threads[sid] = time.time() 
 		self.cache=cache
+		self.use_openssl=use_openssl_flag
 
 	def get_errno(self, e): 
 		try: 
@@ -117,8 +118,11 @@ class ScanThread(threading.Thread):
 			self.record_failure(e)
 
 	def run(self): 
-		try: 
-			fp = attempt_observation_for_service(self.sid, self.timeout_sec, self.sni)
+		try:
+			if(self.use_openssl):
+			    fp = openssl_attempt_observation_for_service(self.sid, self.timeout_sec, self.sni)
+			else:
+			    fp = attempt_observation_for_service(self.sid, self.timeout_sec, self.sni)
 			if (fp != None):
 				res_list.append((self.sid,fp))
 				if (self.cache):
@@ -128,10 +132,11 @@ class ScanThread(threading.Thread):
 				#stats.failures += 1
 				#stats.failure_socket += 1
 		except Exception, e:
-			# self.record_failure(e)
-			logging.error("Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e))
-			self.do_openssl();
-
+			if(self.use_openssl):
+			    logging.error("Error scanning '{0}' - {1}".format(self.sid, e))
+			else:
+			    logging.error("Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e))
+			    self.do_openssl();
 		self.global_stats.num_completed += 1
 		self.global_stats.active_threads -= 1
 		
@@ -235,8 +240,8 @@ memcachedgroup.add_argument('--envmemcache', action='store_true', default=False,
 parser.add_argument('--memcache-user','-mu', help="Memcached username. Default: use environment vars if no host specified.")
 parser.add_argument('--memcache-password', '-mp', help="Memcached password. Default: use environment vars if no host specified.")
 parser.add_argument('--memcache-anonymous-mode', default=MEMCACHED_ANON_AUTH_MODE, help="Set this flag if memcached does not require an authentication.  Default: \'%(default)s\'")
-parser.add_argument('--redis-url', '-ru', default=DEFAULT_REDIS_ADDR, help="Address to use for the webserver. Default: \'%(default)s\'.")
-
+parser.add_argument('--redis-url', '-ru', default=DEFAULT_REDIS_ADDR, help="Address to use for the redis backend. Default: \'%(default)s\'.")
+parser.add_argument('--openssl-only',action='store_true',default=True,help="Use binary OpenSSL only. Default: \'%(default)s\'.")
 
 args = parser.parse_args()
 
@@ -298,6 +303,11 @@ f = args.service_id_file
 start_time = time.time()
 localtime = time.asctime( time.localtime(start_time) )
 
+if(args.openssl_only):
+    use_openssl=True
+else:
+    use_openssl=False
+
 # read all service names to start;
 # otherwise the database can lock up
 # if we're accepting data piped from another process
@@ -314,7 +324,7 @@ for sid in all_sids:
 		# TODO: use a regex instead
 		if sid.split(",")[1] == notary_common.SSL_TYPE:
 			stats.num_started += 1
-			t = ScanThread(sid,stats,timeout_sec,args.sni,cacheJar)
+			t = ScanThread(sid,stats,timeout_sec,args.sni,cacheJar,use_openssl)
 			t.start()
  
 		if (stats.num_started % rate) == 0: 

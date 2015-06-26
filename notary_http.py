@@ -57,6 +57,7 @@ class NotaryHTTPServer:
 	STATIC_INDEX = "index.html"
 	LOG_DIR = 'logs'
 	LOG_FILE = 'webserver.log'
+	USE_OPENSSL_ONLY=True
 
 	CACHE_EXPIRY = 60 * 60 * 12 # seconds. see doc/advanced_notary_configuration.txt
 
@@ -92,6 +93,8 @@ class NotaryHTTPServer:
 		parser.add_argument('--cache-only', action='store_true', default=False,
 			help="When retrieving data, *only* read from the cache - do not read any database records. Default: %(default)s")
 
+		parser.add_argument('--openssl-only',action='store_true',default=self.USE_OPENSSL_ONLY,help="Use only binary OpenSSL for scanning purposes. Default: %(default)s")
+
 		parser.add_argument('--cache-expiry', '--cache-duration',\
 			default=self.CACHE_EXPIRY, type=self.cache_duration,
 			metavar="CACHE_EXPIRY[Ss|Mm|Hh]",
@@ -106,7 +109,7 @@ class NotaryHTTPServer:
 		parser.add_argument('--memcache-user','-mu', help="Memcached username. Default: use environment vars if no host specified.")
 		parser.add_argument('--memcache-password', '-mp', help="Memcached password. Default: use environment vars if no host specified.")
 		parser.add_argument('--memcache-anonymous-mode', default=self.MEMCACHED_ANON_AUTH_MODE, help="Set this flag if memcached does not require an authentication.  Default: \'%(default)s\'")
-		parser.add_argument('--redis-url', '-ru', default=self.DEFAULT_REDIS_ADDR, help="Address to use for the webserver. Default: \'%(default)s\'.")
+		parser.add_argument('--redis-url', '-ru', default=self.DEFAULT_REDIS_ADDR, help="Address to use for the redis backend. Default: \'%(default)s\'.")
 
 		# socket_queue_size and thread_pool use the cherrypy defaults,
 		# but we hardcode them here rather than refer to the cherrypy variables directly
@@ -148,6 +151,11 @@ class NotaryHTTPServer:
 		self.web_addr = self.DEFAULT_WEB_ADDR;
 		if (args.bind_address):
 			self.web_addr=args.bind_address;
+
+		if(args.openssl_only):
+		    self.use_openssl=True
+		else:
+		    self.use_openssl=self.USE_OPENSSL_ONLY
 
 		self.cache = None
 		if (args.memcache):
@@ -379,7 +387,7 @@ class NotaryHTTPServer:
 						do_scan = True
 
 				if (do_scan):
-					t = OnDemandScanThread(service, 10 , self.use_sni, self, self.ndb)
+					t = OnDemandScanThread(service, 10 , self.use_sni, self, self.ndb, self.use_openssl)
 					t.start()
 					# report the metrics *after* launching so the scanning thread can get started
 					self.ndb.report_metric('ScanForNewService', service)
@@ -480,12 +488,13 @@ class NotaryHTTPServer:
 
 class OnDemandScanThread(threading.Thread): 
 
-	def __init__(self, sid, timeout_sec, use_sni, server_obj, db):
+	def __init__(self, sid, timeout_sec, use_sni, server_obj, db, use_openssl_only_flag=False):
 		self.sid = sid
 		self.timeout_sec = timeout_sec
 		self.use_sni = use_sni
 		self.server_obj = server_obj
 		self.db = db
+		self.use_openssl_only = use_openssl_only_flag
 		threading.Thread.__init__(self)
 
 	def __del__(self):
@@ -506,15 +515,20 @@ class OnDemandScanThread(threading.Thread):
 	def run(self): 
 
 		try:
-			fp = attempt_observation_for_service(self.sid, self.timeout_sec, self.use_sni)
+			if(self.use_openssl_only):
+				fp = openssl_attempt_observation_for_service(self.sid, self.timeout_sec, self.use_sni)
+			else:
+				fp = attempt_observation_for_service(self.sid, self.timeout_sec, self.use_sni)
 			if (fp != None):
 				self.db.report_observation(self.sid, fp)
 			# else error already logged
 			# TODO: add internal blacklisting to remove sites that don't exist or stop working.
 		except (ValueError, SSLScanTimeoutException, SSLAlertException) as e:
-			self.db.report_metric('OnDemandServiceScanFailure', self.sid + " " + str(e))
-			print >> sys.stderr, "Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e)
-			self.do_openssl();
+			if(self.use_openssl_only is False):
+			    print >> sys.stderr, "Error scanning '{0}' - {1}, trying OpenSSL".format(self.sid, e)
+			    self.do_openssl();
+			else:
+			    self.db.report_metric('OnDemandServiceScanFailure', self.sid + " " + str(e))
 		except Exception as e:
 			self.db.report_metric('OnDemandServiceScanFailure', self.sid + " " + str(e))
 			traceback.print_exc(file=sys.stdout)
