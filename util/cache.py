@@ -161,7 +161,7 @@ class Memcache(CacheBase):
 		if (self.pool != None):
 			with self.pool.reserve() as mc:
 				try:
-					mc.set(str(prefixkey), data, time=expiry)
+					mc.set(str(prefixkey), str(data), time=expiry)
 				except Exception as e:
 					print >> sys.stderr, "cache set() error: '{0}'.".format(e)
 		else:
